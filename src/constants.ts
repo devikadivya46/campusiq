@@ -3,7 +3,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Room, Booking } from './types';
+import { Room, Booking, User } from './types';
+
+export const MOCK_USERS: User[] = [
+  { id: 'ADMIN123', name: 'System Admin', role: 'Administrator' },
+  { id: 'FACULTY123', name: 'Prof. Sharma', role: 'Faculty' },
+  { id: 'STU123', name: 'Student Council', role: 'Student' }
+];
 
 export const INITIAL_ROOMS: Room[] = [
   { id: '1', name: 'Advanced Robotics Lab', type: 'Lab', capacity: 50, building: 'Science Block', floor: 4, features: ['Workstations', 'Robotic Arms', '3D Printers'] },

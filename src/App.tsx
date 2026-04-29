@@ -24,8 +24,8 @@ import {
   Calendar,
   Clock
 } from 'lucide-react';
-import { INITIAL_ROOMS, INITIAL_BOOKINGS } from './constants';
-import { Room, Booking, UserRole, AppNotification } from './types';
+import { INITIAL_ROOMS, INITIAL_BOOKINGS, MOCK_USERS } from './constants';
+import { Room, Booking, UserRole, AppNotification, User } from './types';
 import { cn, getConflict, findAvailableRooms, findAvailableSlots, getPriorityLabel } from './lib/utils';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 import { 
@@ -45,7 +45,8 @@ type Tab = 'dashboard' | 'inventory' | 'booking' | 'approvals' | 'analytics' | '
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
-  const [role, setRole] = useState<UserRole>('Administrator');
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const role = currentUser?.role || 'Student';
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [rooms] = useState<Room[]>(INITIAL_ROOMS);
@@ -71,7 +72,7 @@ export default function App() {
   const menuItems = useMemo(() => {
     const items: { id: string, label: string, icon: React.ReactNode, roles: UserRole[] }[] = [
       { id: 'dashboard', label: 'Admin Dashboard', icon: <LayoutDashboard size={18} />, roles: ['Administrator'] },
-      { id: 'inventory', label: 'Resource Inventory', icon: <Box size={18} />, roles: ['Administrator', 'Faculty'] },
+      { id: 'inventory', label: 'Resource Inventory', icon: <Box size={18} />, roles: ['Administrator', 'Faculty', 'Student'] },
       { id: 'booking', label: 'Booking Management', icon: <CalendarCheck size={18} />, roles: ['Administrator', 'Faculty', 'Student'] },
       { id: 'approvals', label: 'Approval Module', icon: <ShieldCheck size={18} />, roles: ['Administrator'] },
       { id: 'optimization', label: 'Optimization Module', icon: <Zap size={18} />, roles: ['Administrator'] },
@@ -136,6 +137,10 @@ export default function App() {
     checkReminders();
     return () => clearInterval(interval);
   }, [bookings, rooms, addNotification, sentReminders]);
+
+  if (!currentUser) {
+    return <LoginPage onLogin={setCurrentUser} />;
+  }
 
   return (
     <div className="flex min-h-screen bg-background font-sans text-slate-900">
@@ -211,15 +216,13 @@ export default function App() {
 
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2">
-                <select 
-                  value={role} 
-                  onChange={(e) => setRole(e.target.value as UserRole)}
-                  className="bg-slate-900 text-white rounded-lg px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider outline-none hover:bg-slate-800 transition-colors cursor-pointer"
-                >
-                  <option value="Administrator">Administrator</option>
-                  <option value="Faculty">Faculty</option>
-                  <option value="Student">Student</option>
-                </select>
+                <div className="flex gap-2 items-center bg-slate-900 text-white rounded-lg px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider">
+                  <span>{currentUser?.name} ({role})</span>
+                  <div className="w-[1px] h-3 bg-slate-700 mx-1"></div>
+                  <button onClick={() => setCurrentUser(null)} className="hover:text-red-400 text-slate-300 transition-colors">
+                    Logout
+                  </button>
+                </div>
               </div>
               
               <div className="flex items-center gap-2 pl-3 relative">
@@ -296,7 +299,7 @@ export default function App() {
               transition={{ duration: 0.15 }}
             >
               {activeTab === 'dashboard' && role === 'Administrator' && <DashboardView bookings={bookings} rooms={rooms} />}
-              {activeTab === 'inventory' && (role === 'Administrator' || role === 'Faculty') && <InventoryView rooms={rooms} bookings={bookings} />}
+              {activeTab === 'inventory' && (role === 'Administrator' || role === 'Faculty' || role === 'Student') && <InventoryView rooms={rooms} bookings={bookings} role={role} />}
               {activeTab === 'booking' && <BookingView rooms={rooms} bookings={bookings} onApply={handleApplyBooking} role={role} addNotification={addNotification} />}
               {activeTab === 'approvals' && role === 'Administrator' && <ApprovalsView bookings={bookings} setBookings={setBookings} addNotification={addNotification} rooms={rooms} />}
               {activeTab === 'optimization' && role === 'Administrator' && <OptimizationView rooms={rooms} bookings={bookings} />}
@@ -609,16 +612,23 @@ function DashboardView({ bookings, rooms }: { bookings: Booking[], rooms: Room[]
                 <tr key={time}>
                   <td className="pr-4 py-1 text-[10px] font-bold text-slate-500 text-right">{time}</td>
                   {Array.from({ length: 8 }).map((_, i) => {
-                    // For the "Today" column (index 7), we'll make it somehwat dynamic, others can be mock for aesthetic
-                    const isToday = i === 7;
                     const hour = parseInt(time.split(':')[0]);
-                    const seed = (hour * (i + 1)) % 7;
-                    const isBooked = isToday 
-                      ? approvedToday.some(b => {
-                          const bh = new Date(b.startTime).getHours();
-                          return bh === hour;
-                        })
-                      : seed > 4;
+                    const targetDate = new Date();
+                    
+                    if (i < 7) {
+                      const currentDay = targetDate.getDay() || 7; // Convert 0 (Sun) to 7
+                      const targetDay = i + 1; // Mon = 1, Tue = 2... Sun = 7
+                      targetDate.setDate(targetDate.getDate() + (targetDay - currentDay));
+                    }
+                    
+                    const isBooked = approvedBookings.some(b => {
+                      const bStart = new Date(b.startTime);
+                      const bEnd = new Date(b.endTime);
+                      const sameDate = bStart.getFullYear() === targetDate.getFullYear() && 
+                                       bStart.getMonth() === targetDate.getMonth() && 
+                                       bStart.getDate() === targetDate.getDate();
+                      return sameDate && hour >= bStart.getHours() && hour < bEnd.getHours();
+                    });
 
                     return (
                       <td key={i} className="min-w-[60px]">
@@ -716,7 +726,7 @@ function OptimizationCard({ id, time, message, canExecute, status }: { id: strin
   );
 }
 
-function InventoryView({ rooms, bookings }: { rooms: Room[], bookings: Booking[] }) {
+function InventoryView({ rooms, bookings, role }: { rooms: Room[], bookings: Booking[], role: UserRole }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedType, setSelectedType] = useState<string>('All');
   const currentBookings = bookings.filter(b => b.status === 'Approved');
@@ -760,7 +770,9 @@ function InventoryView({ rooms, bookings }: { rooms: Room[], bookings: Booking[]
           >
             {types.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
-          <button className="bg-slate-900 text-white hover:bg-black px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all shadow-lg active:scale-95">Add Resource</button>
+          {role !== 'Student' && (
+            <button className="bg-slate-900 text-white hover:bg-black px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all shadow-lg active:scale-95">Add Resource</button>
+          )}
         </div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -1888,6 +1900,87 @@ function AnalyticsView({ bookings, rooms }: { bookings: Booking[], rooms: Room[]
               </div>
              )}
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LoginPage({ onLogin }: { onLogin: (user: User) => void }) {
+  const [uid, setUid] = useState('');
+  const [error, setError] = useState('');
+
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    const user = MOCK_USERS.find(u => u.id === uid.trim().toUpperCase());
+    if (user) {
+      setError('');
+      onLogin(user);
+    } else {
+      setError('Invalid Unique ID. Please try again.');
+    }
+  };
+
+  return (
+    <div className="flex h-screen w-full items-center justify-center bg-slate-900 relative overflow-hidden font-sans">
+      <div className="absolute inset-0 z-0 opacity-20 pointer-events-none">
+        <div className="absolute top-1/4 left-1/4 w-[500px] h-[500px] bg-indigo-600 rounded-full blur-[120px] mix-blend-screen" />
+        <div className="absolute bottom-1/4 right-1/4 w-[400px] h-[400px] bg-emerald-600 rounded-full blur-[100px] mix-blend-screen" />
+      </div>
+      
+      <div className="z-10 w-full max-w-md bg-white border border-slate-200 rounded-2xl shadow-2xl p-8 transform transition-all relative">
+        <div className="flex flex-col items-center mb-8">
+           <div className="w-12 h-12 bg-indigo-600 rounded-xl flex items-center justify-center text-white font-black text-xl mb-4 shadow-lg shadow-indigo-200">
+             IQ
+           </div>
+           <h1 className="text-2xl font-black tracking-tight text-slate-900">CampusIQ <span className="text-indigo-600">AI</span></h1>
+           <p className="text-[10px] text-slate-400 uppercase tracking-[0.2em] mt-1 font-bold">Infrastructure Intelligence</p>
+        </div>
+
+        <form onSubmit={handleLogin} className="space-y-6">
+          <div>
+            <label className="block text-[11px] font-black text-slate-900 uppercase tracking-widest mb-2" htmlFor="uid">
+              System Access Key
+            </label>
+            <div className="relative">
+               <ShieldCheck className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+               <input 
+                 id="uid"
+                 name="uid"
+                 type="text" 
+                 value={uid}
+                 onChange={(e) => { setUid(e.target.value); setError(''); }}
+                 placeholder="Enter Unique ID (e.g., ADMIN123)"
+                 className="w-full bg-slate-50 border border-slate-200 text-slate-900 placeholder:text-slate-400 rounded-xl pl-10 pr-4 py-3 text-sm font-bold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
+                 autoComplete="off"
+               />
+            </div>
+            {error && (
+              <motion.p 
+                initial={{ opacity: 0, y: -10 }} 
+                animate={{ opacity: 1, y: 0 }} 
+                className="text-red-500 text-[10px] font-bold mt-2"
+              >
+                {error}
+              </motion.p>
+            )}
+          </div>
+
+          <button 
+            type="submit" 
+            className="w-full bg-indigo-600 hover:bg-black text-white rounded-xl py-3 text-xs font-black uppercase tracking-widest transition-all shadow-md shadow-indigo-100 flex justify-center items-center gap-2 group"
+          >
+             Authenticate <Zap size={14} className="group-hover:scale-110 transition-transform" />
+          </button>
+        </form>
+
+        <div className="mt-8 pt-6 border-t border-slate-100 bg-slate-50/50 -mx-8 -mb-8 p-6 rounded-b-2xl">
+           <h4 className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-3 block text-center">Reference Keys</h4>
+           <div className="flex justify-center gap-3">
+             <span className="text-[10px] font-bold text-slate-500 bg-white border border-slate-200 px-2.5 py-1 rounded-md shadow-sm">ADMIN123</span>
+             <span className="text-[10px] font-bold text-slate-500 bg-white border border-slate-200 px-2.5 py-1 rounded-md shadow-sm">FACULTY123</span>
+             <span className="text-[10px] font-bold text-slate-500 bg-white border border-slate-200 px-2.5 py-1 rounded-md shadow-sm">STU123</span>
+           </div>
         </div>
       </div>
     </div>

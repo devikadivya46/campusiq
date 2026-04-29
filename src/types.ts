@@ -5,6 +5,12 @@
 
 export type UserRole = 'Student' | 'Faculty' | 'Administrator';
 
+export interface User {
+  id: string; // Unique ID
+  name: string;
+  role: UserRole;
+}
+
 export interface AppNotification {
   id: string;
   type: 'Success' | 'Warning' | 'Error' | 'Info';
