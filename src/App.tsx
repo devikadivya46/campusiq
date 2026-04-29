@@ -24,7 +24,7 @@ import {
 import { INITIAL_ROOMS, INITIAL_BOOKINGS } from './constants';
 import { Room, Booking, UserRole, AppNotification } from './types';
 import { cn, getConflict } from './lib/utils';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 import { 
   startOfMonth, 
   endOfMonth, 
@@ -141,84 +141,112 @@ export default function App() {
       <main className="ml-64 flex-1 flex flex-col min-h-screen">
         {/* Header */}
         <header className="sticky top-0 z-40 flex justify-between items-center px-8 h-16 w-full bg-white/80 backdrop-blur-md border-b border-slate-200">
-          <div className="flex items-center gap-4">
-            <h1 className="text-lg font-bold">Infrastructure Intelligence</h1>
-            <span className="text-slate-400 text-xs hidden sm:inline-block">Real-time optimization of campus resources</span>
+          <div className="flex items-center gap-10">
+            <div className="flex flex-col">
+              <h1 className="text-base font-black tracking-tight text-slate-900 leading-none">SYSTEM CONTROL</h1>
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Global Node: Sector-07</span>
+            </div>
+            
+            <div className="hidden xl:flex items-center relative group">
+              <input 
+                type="text" 
+                placeholder="Search infrastructure or nodes..." 
+                className="bg-slate-50 border border-slate-200 rounded-xl px-10 py-2 text-xs font-medium w-96 outline-none focus:ring-2 ring-indigo-500/10 focus:border-indigo-500/50 transition-all"
+              />
+              <div className="absolute left-3 text-slate-400 group-focus-within:text-indigo-500 transition-colors">
+                <Box size={14} />
+              </div>
+              <div className="absolute right-3 flex gap-1 items-center">
+                <kbd className="px-1.5 py-0.5 rounded border border-slate-200 bg-white text-[9px] font-bold text-slate-400">⌘</kbd>
+                <kbd className="px-1.5 py-0.5 rounded border border-slate-200 bg-white text-[9px] font-bold text-slate-400">K</kbd>
+              </div>
+            </div>
           </div>
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <select 
-                value={role} 
-                onChange={(e) => setRole(e.target.value as UserRole)}
-                className="bg-slate-100 border border-slate-200 rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-700 outline-none"
-              >
-                <option value="Administrator">Administrator</option>
-                <option value="Faculty">Faculty</option>
-                <option value="Student">Student</option>
-              </select>
-            </div>
-            <div className="flex items-center gap-2 px-3 py-1 bg-emerald-50 text-emerald-700 rounded-full border border-emerald-100">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
-              <span className="text-[10px] font-bold uppercase tracking-wider">Live Monitor</span>
-            </div>
-            <div className="flex items-center gap-2 pl-4 border-l border-slate-100 relative">
-              <button 
-                onClick={() => setIsNotifOpen(!isNotifOpen)}
-                className="p-2 text-slate-400 hover:text-indigo-600 transition-colors relative"
-              >
-                <Bell size={18} />
-                {notifications.some(n => !n.read) && (
-                  <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border border-white shadow-sm" />
-                )}
-              </button>
-              
-              <AnimatePresence>
-                {isNotifOpen && (
-                  <motion.div 
-                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                    className="absolute right-0 top-12 w-80 bg-white border border-slate-200 rounded-2xl shadow-2xl z-50 overflow-hidden"
-                  >
-                    <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                      <span className="text-xs font-bold text-slate-900 uppercase tracking-widest">Notifications</span>
-                      <button 
-                        onClick={() => setNotifications(prev => prev.map(n => ({ ...n, read: true })))}
-                        className="text-[10px] font-bold text-indigo-600 hover:underline"
-                      >
-                        Mark all as read
-                      </button>
-                    </div>
-                    <div className="max-h-96 overflow-y-auto">
-                      {notifications.length === 0 ? (
-                        <div className="p-8 text-center text-slate-400 text-xs italic">No notifications yet.</div>
-                      ) : (
-                        notifications.map(notif => (
-                          <div key={notif.id} className={cn("p-4 border-b border-slate-50 hover:bg-slate-50 transition-colors cursor-default", !notif.read && "bg-indigo-50/20")}>
-                            <div className="flex justify-between items-start mb-1">
-                              <span className={cn(
-                                "text-[10px] font-bold px-1.5 py-0.5 rounded",
-                                notif.type === 'Success' ? "bg-emerald-50 text-emerald-600" : 
-                                notif.type === 'Warning' ? "bg-amber-50 text-amber-600" :
-                                "bg-indigo-50 text-indigo-600"
-                              )}>
-                                {notif.type}
-                              </span>
-                              <span className="text-[9px] text-slate-400">
-                                {new Date(notif.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                              </span>
-                            </div>
-                            <p className="text-xs font-bold text-slate-900">{notif.title}</p>
-                            <p className="text-[11px] text-slate-500 mt-0.5">{notif.message}</p>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
 
-              <button className="p-2 text-slate-400 hover:text-slate-600 transition-colors"><Settings size={18} /></button>
+          <div className="flex items-center gap-6">
+            <div className="hidden md:flex items-center gap-12 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-r border-slate-100 pr-8">
+               <div className="flex flex-col gap-0.5">
+                  <span className="text-slate-900 tabular-nums">1.2ms</span>
+                  <span>Latency</span>
+               </div>
+               <div className="flex flex-col gap-0.5">
+                  <span className="text-emerald-500">Normal</span>
+                  <span>Payload</span>
+               </div>
+            </div>
+
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <select 
+                  value={role} 
+                  onChange={(e) => setRole(e.target.value as UserRole)}
+                  className="bg-slate-900 text-white rounded-lg px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider outline-none hover:bg-slate-800 transition-colors cursor-pointer"
+                >
+                  <option value="Administrator">Administrator</option>
+                  <option value="Faculty">Faculty</option>
+                  <option value="Student">Student</option>
+                </select>
+              </div>
+              
+              <div className="flex items-center gap-2 pl-4 relative">
+                <button 
+                  onClick={() => setIsNotifOpen(!isNotifOpen)}
+                  className="p-2 text-slate-400 hover:text-indigo-600 transition-colors relative bg-slate-50 rounded-xl border border-slate-100"
+                >
+                  <Bell size={18} />
+                  {notifications.some(n => !n.read) && (
+                    <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-indigo-500 rounded-full border border-white" />
+                  )}
+                </button>
+                
+                <AnimatePresence>
+                  {isNotifOpen && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                      className="absolute right-0 top-14 w-80 bg-white border border-slate-200 rounded-2xl shadow-2xl z-50 overflow-hidden"
+                    >
+                      <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                        <span className="text-xs font-bold text-slate-900 uppercase tracking-widest">System Logs</span>
+                        <button 
+                          onClick={() => setNotifications(prev => prev.map(n => ({ ...n, read: true })))}
+                          className="text-[10px] font-bold text-indigo-600 hover:underline"
+                        >
+                          Clear All
+                        </button>
+                      </div>
+                      <div className="max-h-96 overflow-y-auto">
+                        {notifications.length === 0 ? (
+                          <div className="p-8 text-center text-slate-400 text-xs italic">No active system events.</div>
+                        ) : (
+                          notifications.map(notif => (
+                            <div key={notif.id} className={cn("p-4 border-b border-slate-50 hover:bg-slate-50 transition-colors cursor-default", !notif.read && "bg-indigo-50/10")}>
+                              <div className="flex justify-between items-start mb-1">
+                                <span className={cn(
+                                  "text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider",
+                                  notif.type === 'Success' ? "bg-emerald-50 text-emerald-600" : 
+                                  notif.type === 'Warning' ? "bg-amber-50 text-amber-600" :
+                                  "bg-indigo-50 text-indigo-600"
+                                )}>
+                                  {notif.type}
+                                </span>
+                                <span className="text-[9px] text-slate-400 font-bold">
+                                  {new Date(notif.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              </div>
+                              <p className="text-xs font-bold text-slate-900">{notif.title}</p>
+                              <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">{notif.message}</p>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                <button className="p-2 text-slate-400 hover:text-indigo-600 transition-colors bg-slate-50 rounded-xl border border-slate-100"><Settings size={18} /></button>
+              </div>
             </div>
           </div>
         </header>
@@ -242,6 +270,35 @@ export default function App() {
             </motion.div>
           </AnimatePresence>
         </div>
+
+        {/* Global Footer */}
+        <footer className="mt-auto px-8 py-6 border-t border-slate-200 bg-white">
+          <div className="flex flex-col md:flex-row justify-between items-center gap-6 text-slate-500">
+            <div className="flex flex-col md:flex-row items-center gap-4 text-[10px] font-bold uppercase tracking-widest">
+              <div className="flex items-center gap-2">
+                <ShieldCheck size={14} className="text-emerald-500" />
+                <span>System Encrypted</span>
+              </div>
+              <span className="hidden md:block w-1 h-1 rounded-full bg-slate-300" />
+              <span>CampusIQ v2.4.0-Stable</span>
+              <span className="hidden md:block w-1 h-1 rounded-full bg-slate-300" />
+              <div className="flex items-center gap-2">
+                <Activity size={14} className="text-indigo-500" />
+                <span>Node Monitor Active</span>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-8 text-[11px] font-bold uppercase tracking-tight">
+              <a href="#" className="hover:text-indigo-600 transition-colors">Legal Policy</a>
+              <a href="#" className="hover:text-indigo-600 transition-colors">API Keys</a>
+              <a href="#" className="hover:text-indigo-600 transition-colors">Cloud Status</a>
+              <div className="pl-8 border-l border-slate-100 flex items-center gap-2 text-slate-400">
+                <LayoutDashboard size={14} />
+                <span>© 2024 INFRASTRUCTURE INTEL</span>
+              </div>
+            </div>
+          </div>
+        </footer>
         {/* Floating Action Button */}
         <div className="fixed bottom-8 right-8 z-50">
           <button className="bg-indigo-500 hover:bg-indigo-600 text-white p-4 rounded-full shadow-2xl shadow-indigo-500/20 transition-all transform hover:scale-110 active:scale-95 group flex items-center gap-2 overflow-hidden">
@@ -278,6 +335,14 @@ function NavItem({ active, onClick, icon, label }: { active: boolean, onClick: (
 // Updated Components
 
 function DashboardView({ bookings, rooms }: { bookings: Booking[], rooms: Room[] }) {
+  const approvedToday = bookings.filter(b => b.status === 'Approved' && isSameDay(new Date(b.startTime), new Date()));
+  const pending = bookings.filter(b => b.status === 'Pending').length;
+  
+  const inUseCount = rooms.filter(r => {
+    const nowISO = new Date().toISOString();
+    return approvedToday.some(b => b.roomId === r.id && b.startTime <= nowISO && b.endTime >= nowISO);
+  }).length;
+
   const chartData = [
     { name: 'Mon', usage: 65 },
     { name: 'Tue', usage: 78 },
@@ -287,29 +352,175 @@ function DashboardView({ bookings, rooms }: { bookings: Booking[], rooms: Room[]
   ];
 
   return (
-    <div className="space-y-8">
-      {/* Stats Row */}
+    <div className="space-y-8 pb-10">
+      {/* Stats Row - Matching User Image */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard label="TAM Efficiency" value="₹1.2M" trend="+12.4%" color="indigo" />
-        <StatCard label="Conflict Prevention" value="99.2%" trend="Stable" color="emerald" pulse />
-        <StatCard label="Room Utilization" value="84.5%" trend="+5.2%" color="amber" />
-        <StatCard label="Predicted Savings" value="18.4%" trend="Optimized" color="indigo" />
+        <DashboardStatCard 
+          label="Available now" 
+          value={rooms.length - inUseCount} 
+          subLabel={`of ${rooms.length} rooms`} 
+          color="text-emerald-500" 
+        />
+        <DashboardStatCard 
+          label="In use now" 
+          value={inUseCount} 
+          subLabel="rooms occupied" 
+          color="text-red-500" 
+        />
+        <DashboardStatCard 
+          label="Bookings today" 
+          value={approvedToday.length} 
+          subLabel="approved" 
+          color="text-slate-900" 
+        />
+        <DashboardStatCard 
+          label="Pending" 
+          value={pending} 
+          subLabel="need approval" 
+          color="text-orange-500" 
+        />
       </div>
 
       <div className="grid grid-cols-12 gap-8">
-        {/* Main Chart */}
-        <div className="col-span-12 lg:col-span-8 bg-white border border-slate-200 p-6 rounded-2xl shadow-sm">
-          <div className="flex justify-between items-center mb-8">
-            <div>
-              <h2 className="text-xl text-slate-900 font-bold">Resource Demand Heatmap</h2>
-              <p className="text-slate-500 text-xs font-medium">Weekly utilization variance</p>
+        {/* Weekly Utilization */}
+        <div className="col-span-12 lg:col-span-6 bg-white border border-slate-200 p-8 rounded-2xl shadow-sm">
+          <h2 className="text-xl text-slate-900 font-bold mb-8">Weekly utilization by resource type</h2>
+          <div className="flex items-end justify-between gap-4 h-64">
+            {[
+              { label: 'Classrooms', val: 72, color: 'bg-blue-500' },
+              { label: 'Labs', val: 88, color: 'bg-emerald-500' },
+              { label: 'Seminar halls', val: 45, color: 'bg-orange-600' },
+              { label: 'Equipment', val: 60, color: 'bg-amber-600' },
+            ].map(item => (
+              <div key={item.label} className="flex-1 flex flex-col items-center gap-4">
+                <div className="w-full bg-slate-50 rounded-lg overflow-hidden flex flex-col justify-end relative h-48">
+                  <motion.div 
+                    initial={{ height: 0 }}
+                    animate={{ height: `${item.val}%` }}
+                    className={cn("w-full absolute bottom-0", item.color)} 
+                  />
+                </div>
+                <div className="text-center">
+                  <p className="text-xs font-bold text-slate-900">{item.label}</p>
+                  <p className="text-xs font-bold text-slate-400 mt-1">{item.val}%</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Booking status breakdown */}
+        <div className="col-span-12 lg:col-span-6 bg-white border border-slate-200 p-8 rounded-2xl shadow-sm">
+          <h2 className="text-xl text-slate-900 font-bold mb-8">Booking status breakdown</h2>
+          <div className="flex flex-col md:flex-row items-center justify-between gap-8 h-64">
+            <div className="w-48 h-48">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={[
+                      { name: 'Approved', value: 50, color: '#3b82f6' },
+                      { name: 'Completed', value: 32, color: '#10b981' },
+                      { name: 'Rejected', value: 9, color: '#ef4444' },
+                      { name: 'Pending', value: 9, color: '#f59e0b' },
+                    ]}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={80}
+                    paddingAngle={5}
+                    dataKey="value"
+                  >
+                    {[
+                      { color: '#3b82f6' },
+                      { color: '#10b981' },
+                      { color: '#ef4444' },
+                      { color: '#f59e0b' },
+                    ].map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                </PieChart>
+              </ResponsiveContainer>
             </div>
-            <div className="flex gap-2">
-              <span className="px-3 py-1 rounded bg-slate-900 text-white text-[10px] font-bold">Peak</span>
-              <span className="px-3 py-1 rounded bg-indigo-100 text-indigo-700 text-[10px] font-bold">Normal</span>
+            <div className="space-y-3">
+              {[
+                { label: 'Approved', val: 50, color: 'bg-blue-500' },
+                { label: 'Completed', val: 32, color: 'bg-emerald-500' },
+                { label: 'Rejected', val: 9, color: 'bg-red-500' },
+                { label: 'Pending', val: 9, color: 'bg-amber-500' },
+              ].map(item => (
+                <div key={item.label} className="flex items-center gap-3">
+                  <div className={cn("w-3 h-3 rounded-full", item.color)} />
+                  <span className="text-sm font-bold text-slate-600">{item.label} — {item.val}%</span>
+                </div>
+              ))}
             </div>
           </div>
-          <div className="h-[300px] w-full">
+        </div>
+      </div>
+
+      {/* Live availability heatmap */}
+      <div className="bg-white border border-slate-200 p-8 rounded-2xl shadow-sm">
+        <h2 className="text-xl text-slate-900 font-bold mb-10">Live availability heatmap — today</h2>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr>
+                <th />
+                {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun', 'Today'].map(day => (
+                  <th key={day} className="pb-4 px-2 text-sm font-bold text-slate-600">{day}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {['8:00', '9:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00'].map(time => (
+                <tr key={time}>
+                  <td className="pr-10 py-1.5 text-xs font-bold text-slate-900">{time}</td>
+                  {Array.from({ length: 8 }).map((_, i) => {
+                    const isBooked = Math.random() > 0.6;
+                    return (
+                      <td key={i} className="p-1">
+                        <div className={cn(
+                          "h-10 rounded-lg flex items-center justify-center text-[10px] font-bold border",
+                          isBooked 
+                            ? "bg-red-50 text-red-700 border-red-200" 
+                            : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                        )}>
+                          {isBooked ? 'Booked' : 'Free'}
+                        </div>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Optimization insights */}
+      <div className="space-y-6">
+        <h2 className="text-xl text-slate-900 font-bold">Optimization insights</h2>
+        <div className="space-y-4">
+          <OptimizationInsightCard 
+            message="Seminar Hall B has only 45% utilization. Consider reassigning small-group bookings from Lab 3 (88% full) to free its capacity."
+          />
+          <OptimizationInsightCard 
+            message="Peak demand: 10 AM – 12 PM. 6 resources currently reach 90%+ occupancy. Consider staggered scheduling."
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-12 gap-8">
+        {/* Main Chart (Smaller) */}
+        <div className="col-span-12 lg:col-span-8 bg-white border border-slate-200 p-6 rounded-2xl shadow-sm">
+          <div className="flex justify-between items-center mb-6">
+            <div>
+              <h2 className="text-lg text-slate-900 font-bold">Resource Demand Heatmap</h2>
+              <p className="text-slate-500 text-[10px] font-medium uppercase tracking-wider">Weekly utilization variance</p>
+            </div>
+          </div>
+          <div className="h-[200px] w-full">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData}>
                 <defs>
@@ -319,11 +530,11 @@ function DashboardView({ bookings, rooms }: { bookings: Booking[], rooms: Room[]
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="name" stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} />
-                <YAxis stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} unit="%" />
+                <XAxis dataKey="name" stroke="#64748b" fontSize={10} tickLine={false} axisLine={false} />
+                <YAxis stroke="#64748b" fontSize={10} tickLine={false} axisLine={false} unit="%" />
                 <Tooltip 
-                  contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                  itemStyle={{ color: '#4f46e5' }}
+                  contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px' }}
+                  itemStyle={{ color: '#4f46e5', fontSize: '10px' }}
                 />
                 <Area type="monotone" dataKey="usage" stroke="#4f46e5" fillOpacity={1} fill="url(#colorUsage)" strokeWidth={2} />
               </AreaChart>
@@ -334,112 +545,44 @@ function DashboardView({ bookings, rooms }: { bookings: Booking[], rooms: Room[]
         {/* AI Optimization Engine */}
         <div className="col-span-12 lg:col-span-4 glass-panel rounded-xl overflow-hidden flex flex-col">
           <div className="p-6 border-b border-indigo-500/20 flex justify-between items-center bg-indigo-500/5">
-            <h2 className="font-display text-lg text-white font-bold">AI Optimization Engine</h2>
+            <h2 className="font-display text-lg text-white font-bold">AI Engine</h2>
             <Zap className="text-secondary" size={20} />
           </div>
-          <div className="flex-1 p-6 space-y-4 max-h-[400px] overflow-y-auto">
+          <div className="flex-1 p-6 space-y-4 max-h-[290px] overflow-y-auto">
             <OptimizationCard 
               id="EFFICIENCY_RULE_01" 
               time="2m ago" 
-              message={<>Seminar Hall A is <span className="text-indigo-300 font-bold">80% underutilized</span>; recommend shifting <span className="text-secondary font-bold">Lab CS-1</span> here.</>}
+              message={<>Recommend shifting <span className="text-secondary font-bold">Lab CS-1</span>.</>}
               canExecute
             />
             <OptimizationCard 
               id="HVAC_OPT_44" 
               time="14m ago" 
-              message={<>Main Library occupancy dropping. Suggest scaling down <span className="text-tertiary">Sector 4 HVAC</span> to energy-save mode.</>}
-            />
-            <OptimizationCard 
-              id="CONFLICT_RESOLVED" 
-              time="25m ago" 
-              message={<>Predicted clash between <span className="font-bold">Maths-II</span> and <span className="font-bold">Physics Lab</span> resolved by auto-extending Block B session.</>}
-              status="System Self-Healed"
+              message={<>Scale down <span className="text-tertiary">Sector 4 HVAC</span>.</>}
             />
           </div>
         </div>
       </div>
+    </div>
+  );
+}
 
-      <div className="grid grid-cols-12 gap-8">
-        {/* Resource Distribution */}
-        <div className="col-span-12 lg:col-span-4 bg-white border border-slate-200 p-6 rounded-2xl shadow-sm">
-          <h3 className="text-slate-900 font-bold mb-6">Load Distribution</h3>
-          <div className="space-y-4">
-             {[
-               { label: 'Academic Block', val: 88, color: 'bg-indigo-500' },
-               { label: 'Lab Wing', val: 74, color: 'bg-emerald-500' },
-               { label: 'Admin Central', val: 32, color: 'bg-amber-500' },
-               { label: 'Hostel Areas', val: 15, color: 'bg-slate-400' },
-             ].map(item => (
-               <div key={item.label} className="space-y-1.5">
-                 <div className="flex justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                    <span>{item.label}</span>
-                    <span>{item.val}%</span>
-                 </div>
-                 <div className="h-1.5 w-full bg-slate-50 rounded-full overflow-hidden">
-                    <motion.div 
-                      initial={{ width: 0 }}
-                      animate={{ width: `${item.val}%` }}
-                      className={cn("h-full rounded-full", item.color)} 
-                    />
-                 </div>
-               </div>
-             ))}
-          </div>
-        </div>
-
-        {/* Real-time table */}
-        <div className="col-span-12 lg:col-span-8 bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-          <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/30">
-            <h2 className="text-lg text-slate-900 font-bold">Real-time Occupancy</h2>
-            <span className="text-[10px] px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full font-bold uppercase tracking-wider">32 Active</span>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead className="bg-slate-50/50 text-slate-400 uppercase text-[10px] tracking-widest font-bold border-b border-slate-100">
-                <tr>
-                  <th className="px-6 py-4">Facility / Lab</th>
-                  <th className="px-6 py-4">Current Load</th>
-                  <th className="px-6 py-4">Threshold</th>
-                  <th className="px-6 py-4">Status</th>
-                  <th className="px-6 py-4 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {rooms.slice(0, 3).map((room, idx) => (
-                  <tr key={room.id} className="hover:bg-slate-50 transition-colors group">
-                    <td className="px-6 py-4">
-                      <div className="flex flex-col">
-                        <span className="text-slate-900 font-bold text-sm">{room.name}</span>
-                        <span className="text-[10px] text-slate-500">{room.building}, Level {room.floor}</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 font-mono text-sm font-bold text-slate-700">
-                      {idx === 1 ? '482 / 450' : `${Math.floor(room.capacity * 0.8)} / ${room.capacity}`}
-                    </td>
-                    <td className="px-6 py-4 text-slate-500 text-sm">
-                      {idx === 1 ? '107%' : '80%'}
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={cn(
-                        "flex items-center gap-2 text-[10px] font-bold px-2 py-0.5 rounded-full w-fit border",
-                        idx === 1 ? "bg-red-50 text-red-600 border-red-100" : "bg-emerald-50 text-emerald-600 border-emerald-100"
-                      )}>
-                        <span className={cn("w-1.5 h-1.5 rounded-full", idx === 1 ? "bg-red-600 animate-pulse" : "bg-emerald-600")} />
-                        {idx === 1 ? 'CRITICAL' : 'OPTIMAL'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <button className="text-slate-400 hover:text-indigo-600 transition-colors">
-                        <BarChart4 size={18} />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+function DashboardStatCard({ label, value, subLabel, color }: { label: string, value: string | number, subLabel: string, color: string }) {
+  return (
+    <div className="bg-white border border-slate-100 p-8 rounded-3xl shadow-sm hover:shadow-md transition-all">
+      <p className="text-sm font-medium text-slate-400 mb-4">{label}</p>
+      <div className="space-y-1">
+        <h3 className={cn("text-5xl font-black tracking-tighter", color)}>{value}</h3>
+        <p className="text-xs font-bold text-slate-400">{subLabel}</p>
       </div>
+    </div>
+  );
+}
+
+function OptimizationInsightCard({ message }: { message: string }) {
+  return (
+    <div className="p-4 bg-indigo-50 border border-indigo-100 rounded-xl">
+      <p className="text-sm text-indigo-900 font-medium leading-relaxed">{message}</p>
     </div>
   );
 }
