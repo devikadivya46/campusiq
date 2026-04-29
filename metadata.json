@@ -1,0 +1,6 @@
+{
+  "name": "CampusIQ AI",
+  "description": "Smart Campus Resource Optimization Platform using AI-driven scheduling, conflict detection, and predictive analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["AI-driven scheduling", "Conflict detection", "Real-time analytics"]
+}
