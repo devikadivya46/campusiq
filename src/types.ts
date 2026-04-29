@@ -19,7 +19,7 @@ export interface AppNotification {
 export interface Room {
   id: string;
   name: string;
-  type: 'Classroom' | 'Lab' | 'Auditorium' | 'Seminar Hall';
+  type: 'Classroom' | 'Lab' | 'Auditorium' | 'Seminar Hall' | 'Equipment';
   capacity: number;
   building: string;
   floor: number;
@@ -36,6 +36,7 @@ export interface Booking {
   purpose: string;
   status: 'Pending' | 'Approved' | 'Rejected';
   priority: number; // 1 (Student), 2 (Faculty), 3 (Admin)
+  reminderMinutes?: number; // Minutes before start
 }
 
 export interface ConflictAlert {

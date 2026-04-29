@@ -12,6 +12,7 @@ export const INITIAL_ROOMS: Room[] = [
   { id: '4', name: 'Seminar Hall A', type: 'Seminar Hall', capacity: 120, building: 'Main Tower', floor: 3, features: ['Projector', 'AC'] },
   { id: '5', name: 'Classroom 302', type: 'Classroom', capacity: 40, building: 'Science Block', floor: 3, features: ['Smart Board'] },
   { id: '6', name: 'Classroom 405', type: 'Classroom', capacity: 40, building: 'Science Block', floor: 4, features: ['WiFi'] },
+  { id: '7', name: 'Mobile Projector Kit', type: 'Equipment', capacity: 0, building: 'AV Storage', floor: 1, features: ['4K Projector', 'Screen'] },
 ];
 
 const now = new Date();
@@ -32,6 +33,7 @@ export const INITIAL_BOOKINGS: Booking[] = [
     purpose: 'Robotics Seminar',
     status: 'Approved',
     priority: 2,
+    reminderMinutes: 60,
   },
   {
     id: 'b2',
@@ -43,6 +45,7 @@ export const INITIAL_BOOKINGS: Booking[] = [
     purpose: 'Annual Fest Meeting',
     status: 'Approved',
     priority: 1,
+    reminderMinutes: 30,
   },
   {
     id: 'b3',
@@ -54,5 +57,6 @@ export const INITIAL_BOOKINGS: Booking[] = [
     purpose: 'Faculty Training',
     status: 'Approved',
     priority: 3,
+    reminderMinutes: 15,
   },
 ];

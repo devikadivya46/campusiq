@@ -19,11 +19,14 @@ import {
   MoreVertical,
   AlertTriangle,
   TrendingDown,
-  BarChart4
+  BarChart4,
+  Search,
+  Calendar,
+  Clock
 } from 'lucide-react';
 import { INITIAL_ROOMS, INITIAL_BOOKINGS } from './constants';
 import { Room, Booking, UserRole, AppNotification } from './types';
-import { cn, getConflict } from './lib/utils';
+import { cn, getConflict, findAvailableRooms, findAvailableSlots, getPriorityLabel } from './lib/utils';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 import { 
   startOfMonth, 
@@ -38,7 +41,7 @@ import {
   subMonths 
 } from 'date-fns';
 
-type Tab = 'dashboard' | 'inventory' | 'booking' | 'approvals' | 'analytics' | 'optimization';
+type Tab = 'dashboard' | 'inventory' | 'booking' | 'approvals' | 'analytics' | 'optimization' | 'settings';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
@@ -73,6 +76,7 @@ export default function App() {
       { id: 'approvals', label: 'Approval Module', icon: <ShieldCheck size={18} />, roles: ['Administrator'] },
       { id: 'optimization', label: 'Optimization Module', icon: <Zap size={18} />, roles: ['Administrator'] },
       { id: 'analytics', label: 'Usage & Analytics', icon: <BarChart4 size={18} />, roles: ['Administrator'] },
+      { id: 'settings', label: 'Preferences', icon: <Settings size={18} />, roles: ['Administrator', 'Faculty', 'Student'] },
     ];
     return items.filter(item => item.roles.includes(role));
   }, [role]);
@@ -98,6 +102,40 @@ export default function App() {
       setActiveTab(menuItems[0].id as Tab);
     }
   }, [role, menuItems, activeTab]);
+
+  const [sentReminders, setSentReminders] = useState<Set<string>>(new Set());
+
+  // Automated Reminders Engine
+  React.useEffect(() => {
+    const checkReminders = () => {
+      const now = new Date();
+      bookings.forEach(booking => {
+        if (booking.status === 'Approved' && booking.reminderMinutes && booking.reminderMinutes > 0) {
+          const startTime = new Date(booking.startTime);
+          const reminderTime = new Date(startTime.getTime() - booking.reminderMinutes * 60000);
+          
+          // Trigger if current time passed reminder time AND booking is in future
+          if (!sentReminders.has(booking.id) && now >= reminderTime && now < startTime) {
+            const roomName = rooms.find(r => r.id === booking.roomId)?.name || 'Facility';
+            addNotification(
+              'Automated Reminder',
+              `Alert: Your session in ${roomName} is scheduled to commence in ${booking.reminderMinutes >= 60 ? booking.reminderMinutes / 60 + ' hour(s)' : booking.reminderMinutes + ' minutes'}.`,
+              'Info'
+            );
+            setSentReminders(prev => {
+              const next = new Set(prev);
+              next.add(booking.id);
+              return next;
+            });
+          }
+        }
+      });
+    };
+
+    const interval = setInterval(checkReminders, 15000); // High frequency check for demo
+    checkReminders();
+    return () => clearInterval(interval);
+  }, [bookings, rooms, addNotification, sentReminders]);
 
   return (
     <div className="flex min-h-screen bg-background font-sans text-slate-900">
@@ -258,11 +296,12 @@ export default function App() {
               transition={{ duration: 0.15 }}
             >
               {activeTab === 'dashboard' && role === 'Administrator' && <DashboardView bookings={bookings} rooms={rooms} />}
-              {activeTab === 'inventory' && (role === 'Administrator' || role === 'Faculty') && <InventoryView rooms={rooms} />}
+              {activeTab === 'inventory' && (role === 'Administrator' || role === 'Faculty') && <InventoryView rooms={rooms} bookings={bookings} />}
               {activeTab === 'booking' && <BookingView rooms={rooms} bookings={bookings} onApply={handleApplyBooking} role={role} addNotification={addNotification} />}
               {activeTab === 'approvals' && role === 'Administrator' && <ApprovalsView bookings={bookings} setBookings={setBookings} addNotification={addNotification} rooms={rooms} />}
               {activeTab === 'optimization' && role === 'Administrator' && <OptimizationView rooms={rooms} bookings={bookings} />}
-              {activeTab === 'analytics' && role === 'Administrator' && <AnalyticsView />}
+              {activeTab === 'analytics' && role === 'Administrator' && <AnalyticsView bookings={bookings} rooms={rooms} />}
+              {activeTab === 'settings' && <SettingsView addNotification={addNotification} />}
             </motion.div>
           </AnimatePresence>
         </div>
@@ -331,25 +370,24 @@ function NavItem({ active, onClick, icon, label }: { active: boolean, onClick: (
 // Updated Components
 
 function DashboardView({ bookings, rooms }: { bookings: Booking[], rooms: Room[] }) {
-  const approvedToday = bookings.filter(b => b.status === 'Approved' && isSameDay(new Date(b.startTime), new Date()));
-  const pending = bookings.filter(b => b.status === 'Pending').length;
+  const approvedBookings = bookings.filter(b => b.status === 'Approved');
+  const now = new Date();
+  
+  const approvedToday = approvedBookings.filter(b => isSameDay(new Date(b.startTime), now));
+  const pending = bookings.filter(b => b.status === 'Pending');
   
   const inUseCount = rooms.filter(r => {
-    const nowISO = new Date().toISOString();
+    const nowISO = now.toISOString();
     return approvedToday.some(b => b.roomId === r.id && b.startTime <= nowISO && b.endTime >= nowISO);
   }).length;
 
-  const chartData = [
-    { name: 'Mon', usage: 65 },
-    { name: 'Tue', usage: 78 },
-    { name: 'Wed', usage: 92 },
-    { name: 'Thu', usage: 84 },
-    { name: 'Fri', usage: 70 },
-  ];
+  const currentConflicts = useMemo(() => {
+    return pending.filter(pb => getConflict(pb, approvedBookings)).slice(0, 3);
+  }, [pending, approvedBookings]);
 
   return (
     <div className="space-y-6 pb-6">
-      {/* Stats Row - Matching User Image */}
+      {/* Stats Row */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <DashboardStatCard 
           label="Available now" 
@@ -367,23 +405,26 @@ function DashboardView({ bookings, rooms }: { bookings: Booking[], rooms: Room[]
           label="Bookings today" 
           value={approvedToday.length} 
           subLabel="approved" 
-          color="text-slate-900" 
+          color="text-indigo-600" 
         />
         <DashboardStatCard 
-          label="Pending" 
-          value={pending} 
-          subLabel="need approval" 
+          label="Pending Queue" 
+          value={pending.length} 
+          subLabel="requests" 
           color="text-orange-500" 
         />
       </div>
 
       <div className="grid grid-cols-12 gap-6">
         {/* Weekly Utilization */}
-        <div className="col-span-12 lg:col-span-6 bg-white border border-slate-200 p-6 rounded-xl shadow-sm">
-          <h2 className="text-base text-slate-900 font-bold mb-6">Weekly utilization by resource type</h2>
+        <div className="col-span-12 lg:col-span-7 bg-white border border-slate-200 p-6 rounded-xl shadow-sm">
+          <h2 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-6 flex items-center gap-2">
+            <BarChart3 size={14} className="text-indigo-600" />
+            Live Sector Load
+          </h2>
           <div className="flex items-end justify-between gap-4 h-48">
             {[
-              { label: 'Classrooms', val: 72, color: 'bg-blue-500' },
+              { label: 'Classrooms', val: 72, color: 'bg-indigo-500' },
               { label: 'Labs', val: 88, color: 'bg-emerald-500' },
               { label: 'Seminar halls', val: 45, color: 'bg-orange-600' },
               { label: 'Equipment', val: 60, color: 'bg-amber-600' },
@@ -395,26 +436,90 @@ function DashboardView({ bookings, rooms }: { bookings: Booking[], rooms: Room[]
                     animate={{ height: `${item.val}%` }}
                     className={cn("w-full absolute bottom-0", item.color)} 
                   />
+                  <div className="absolute inset-x-0 bottom-full mb-1 text-center">
+                    <span className="text-[9px] font-black tabular-nums">{item.val}%</span>
+                  </div>
                 </div>
                 <div className="text-center">
                   <p className="text-[10px] font-bold text-slate-900">{item.label}</p>
-                  <p className="text-[10px] font-bold text-slate-400">{item.val}%</p>
                 </div>
               </div>
             ))}
           </div>
         </div>
 
-        {/* Booking status breakdown */}
+        {/* Real-time Occupancy Feed */}
+        <div className="col-span-12 lg:col-span-5 bg-white border border-slate-200 p-6 rounded-xl shadow-sm">
+           <h2 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-6 flex items-center gap-2">
+            <Activity size={14} className="text-emerald-500" />
+            Occupancy Pulse
+          </h2>
+          <div className="space-y-3 max-h-[220px] overflow-y-auto pr-2 custom-scrollbar">
+            {rooms.slice(0, 5).map(room => {
+              const active = approvedToday.find(b => {
+                const nowISO = new Date().toISOString();
+                return b.roomId === room.id && b.startTime <= nowISO && b.endTime >= nowISO;
+              });
+              return (
+                <div key={room.id} className="flex items-center justify-between p-2.5 bg-slate-50/50 border border-slate-100 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <div className={cn("w-2 h-2 rounded-full", active ? "bg-red-500 animate-pulse" : "bg-emerald-500")} />
+                    <div>
+                      <p className="text-[11px] font-black text-slate-900 leading-none mb-1">{room.name}</p>
+                      <p className="text-[8px] text-slate-400 font-bold uppercase tracking-widest">{room.type} • {room.building}</p>
+                    </div>
+                  </div>
+                  <span className={cn("text-[8px] font-black uppercase px-1.5 py-0.5 rounded", active ? "bg-red-50 text-red-600" : "bg-emerald-50 text-emerald-600")}>
+                    {active ? 'Engaged' : 'Active'}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Conflict Feed */}
         <div className="col-span-12 lg:col-span-6 bg-white border border-slate-200 p-6 rounded-xl shadow-sm">
-          <h2 className="text-base text-slate-900 font-bold mb-6">Booking status breakdown</h2>
+          <h2 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-6 flex items-center gap-2">
+            <AlertTriangle size={14} className="text-amber-500" />
+            Critical Conflicts
+          </h2>
+          <div className="space-y-2">
+            {currentConflicts.length > 0 ? currentConflicts.map(c => (
+              <div key={c.id} className="p-3 bg-amber-50 border border-amber-100 rounded-lg flex justify-between items-center group hover:bg-amber-100 transition-colors">
+                <div className="flex items-center gap-3">
+                   <div className="w-8 h-8 rounded-lg bg-white border border-amber-200 flex items-center justify-center text-amber-600">
+                     <AlertTriangle size={14} />
+                   </div>
+                   <div>
+                     <p className="text-[11px] font-black text-slate-900">Collision in {rooms.find(r => r.id === c.roomId)?.name}</p>
+                     <p className="text-[8px] text-slate-400 font-bold uppercase tracking-widest">Requester: {c.userName}</p>
+                   </div>
+                </div>
+                <button className="text-[8px] font-black uppercase text-indigo-600 hover:underline">Resolve</button>
+              </div>
+            )) : (
+              <div className="py-12 text-center border-2 border-dashed border-slate-50 rounded-xl">
+                 <ShieldCheck size={24} className="mx-auto text-slate-100 mb-2" />
+                 <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest">No Active Collisions</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Status Breakdown */}
+        <div className="col-span-12 lg:col-span-6 bg-white border border-slate-200 p-6 rounded-xl shadow-sm">
+          <h2 className="text-sm font-black text-slate-900 uppercase tracking-widest mb-6 flex items-center gap-2">
+            <CheckCircle2 size={14} className="text-indigo-600" />
+            Pulse Distribution
+          </h2>
           <div className="flex items-center justify-between gap-4 h-48">
             <div className="w-36 h-36">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
                     data={[
-                      { name: 'Approved', value: 50, color: '#3b82f6' },
+                      { name: 'Approved', value: 50, color: '#4f46e5' },
                       { name: 'Completed', value: 32, color: '#10b981' },
                       { name: 'Rejected', value: 9, color: '#ef4444' },
                       { name: 'Pending', value: 9, color: '#f59e0b' },
@@ -427,10 +532,7 @@ function DashboardView({ bookings, rooms }: { bookings: Booking[], rooms: Room[]
                     dataKey="value"
                   >
                     {[
-                      { color: '#3b82f6' },
-                      { color: '#10b981' },
-                      { color: '#ef4444' },
-                      { color: '#f59e0b' },
+                      { color: '#4f46e5' }, { color: '#10b981' }, { color: '#ef4444' }, { color: '#f59e0b' },
                     ].map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
@@ -438,14 +540,14 @@ function DashboardView({ bookings, rooms }: { bookings: Booking[], rooms: Room[]
                 </PieChart>
               </ResponsiveContainer>
             </div>
-            <div className="space-y-1.5 flex-1 pl-4 border-l border-slate-100">
+            <div className="space-y-2 flex-1 pl-6 border-l border-slate-100">
               {[
-                { label: 'Approved', val: 50, color: 'bg-blue-500' },
+                { label: 'Approved', val: 50, color: 'bg-indigo-600' },
                 { label: 'Completed', val: 32, color: 'bg-emerald-500' },
                 { label: 'Rejected', val: 9, color: 'bg-red-500' },
                 { label: 'Pending', val: 9, color: 'bg-amber-500' },
               ].map(item => (
-                <div key={item.label} className="flex items-center justify-between text-[11px] font-bold">
+                <div key={item.label} className="flex items-center justify-between text-[10px] font-bold">
                   <div className="flex items-center gap-2">
                     <div className={cn("w-2 h-2 rounded-full", item.color)} />
                     <span className="text-slate-600">{item.label}</span>
@@ -458,32 +560,73 @@ function DashboardView({ bookings, rooms }: { bookings: Booking[], rooms: Room[]
         </div>
       </div>
 
-      {/* Live availability heatmap */}
+      {/* Optimization Insights */}
+      <div className="bg-slate-900 text-white p-6 rounded-2xl relative overflow-hidden shadow-xl">
+        <div className="relative z-10">
+          <div className="flex items-center gap-2 mb-4">
+             <Zap size={14} className="text-emerald-400" />
+             <h2 className="text-xs font-black uppercase tracking-widest text-emerald-400">Optimization Engine active</h2>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+             <OptimizationInsightCard message="Seminar Hall B has only 45% utilization. Consider reassigning small-group bookings from Lab 3 (88% full)." />
+             <OptimizationInsightCard message="Peak demand identified: 10 AM – 12 PM. Stagger scheduling to reduce network load by 14%." />
+          </div>
+        </div>
+        <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 blur-[100px] -mr-32 -mt-32" />
+      </div>
+
+      {/* Live availability heatmap - Based on user attachment */}
       <div className="bg-white border border-slate-200 p-6 rounded-xl shadow-sm">
-        <h2 className="text-base text-slate-900 font-bold mb-6 italic">Live availability heatmap — today</h2>
-        <div className="overflow-x-auto">
-          <table className="w-full">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-sm font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+            <Calendar size={14} className="text-indigo-600" />
+            Live availability heatmap — today
+          </h2>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5">
+              <div className="w-2 h-2 rounded bg-red-50 border border-red-100" />
+              <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Booked</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-2 h-2 rounded bg-emerald-50 border border-emerald-100" />
+              <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Free</span>
+            </div>
+          </div>
+        </div>
+        
+        <div className="overflow-x-auto pb-2">
+          <table className="w-full border-separate border-spacing-1">
             <thead>
               <tr>
-                <th />
+                <th className="w-16"></th>
                 {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun', 'Today'].map(day => (
-                  <th key={day} className="pb-3 px-1 text-[10px] font-black text-slate-400 uppercase tracking-widest">{day}</th>
+                  <th key={day} className="px-1 pb-3 text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">{day}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {['8:00', '9:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00'].map(time => (
                 <tr key={time}>
-                  <td className="pr-6 py-1 text-[10px] font-bold text-slate-500 text-right">{time}</td>
+                  <td className="pr-4 py-1 text-[10px] font-bold text-slate-500 text-right">{time}</td>
                   {Array.from({ length: 8 }).map((_, i) => {
-                    const isBooked = Math.random() > 0.6;
+                    // For the "Today" column (index 7), we'll make it somehwat dynamic, others can be mock for aesthetic
+                    const isToday = i === 7;
+                    const hour = parseInt(time.split(':')[0]);
+                    const seed = (hour * (i + 1)) % 7;
+                    const isBooked = isToday 
+                      ? approvedToday.some(b => {
+                          const bh = new Date(b.startTime).getHours();
+                          return bh === hour;
+                        })
+                      : seed > 4;
+
                     return (
-                      <td key={i} className="p-0.5">
+                      <td key={i} className="min-w-[60px]">
                         <div className={cn(
-                          "h-8 rounded flex items-center justify-center text-[9px] font-bold border transition-all",
+                          "h-8 rounded-lg flex items-center justify-center text-[8px] font-black uppercase tracking-widest border transition-all",
                           isBooked 
-                            ? "bg-red-50 text-red-700 border-red-100" 
-                            : "bg-emerald-50 text-emerald-700 border-emerald-100"
+                            ? "bg-red-50 text-red-600 border-red-100" 
+                            : "bg-emerald-50 text-emerald-600 border-emerald-100"
                         )}>
                           {isBooked ? 'Booked' : 'Free'}
                         </div>
@@ -494,19 +637,6 @@ function DashboardView({ bookings, rooms }: { bookings: Booking[], rooms: Room[]
               ))}
             </tbody>
           </table>
-        </div>
-      </div>
-
-      {/* Optimization insights */}
-      <div className="bg-white border border-slate-200 p-6 rounded-xl shadow-sm">
-        <h2 className="text-base text-slate-900 font-bold mb-4">Optimization Engine</h2>
-        <div className="space-y-2">
-          <OptimizationInsightCard 
-            message="Seminar Hall B has only 45% utilization. Consider reassigning small-group bookings from Lab 3 (88% full)."
-          />
-          <OptimizationInsightCard 
-            message="Peak demand: 10 AM – 12 PM. 6 resources reach 90% occupancy. Stagger scheduling recommended."
-          />
         </div>
       </div>
     </div>
@@ -586,10 +716,25 @@ function OptimizationCard({ id, time, message, canExecute, status }: { id: strin
   );
 }
 
-function InventoryView({ rooms }: { rooms: Room[] }) {
+function InventoryView({ rooms, bookings }: { rooms: Room[], bookings: Booking[] }) {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedType, setSelectedType] = useState<string>('All');
+  const currentBookings = bookings.filter(b => b.status === 'Approved');
+  
+  const filteredRooms = useMemo(() => {
+    return rooms.filter(room => {
+      const matchesSearch = room.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                            room.building.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesType = selectedType === 'All' || room.type === selectedType;
+      return matchesSearch && matchesType;
+    });
+  }, [rooms, searchQuery, selectedType]);
+
+  const types = ['All', ...Array.from(new Set(rooms.map(r => r.type)))];
+
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-end">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div>
           <h2 className="text-lg font-black tracking-tight text-slate-900 flex items-center gap-2">
              <div className="w-1 h-6 bg-indigo-500 rounded-full" />
@@ -597,53 +742,114 @@ function InventoryView({ rooms }: { rooms: Room[] }) {
           </h2>
           <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mt-1 ml-3">Managing {rooms.length} System Resources</p>
         </div>
-        <button className="bg-slate-900 text-white hover:bg-black px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all shadow-lg active:scale-95">Add Resource</button>
+        <div className="flex flex-wrap gap-2 w-full md:w-auto">
+          <div className="relative flex-1 md:w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={12} />
+            <input 
+              type="text"
+              placeholder="Search resources..."
+              className="w-full bg-white border border-slate-200 rounded-lg pl-8 pr-4 py-1.5 text-[10px] font-bold focus:ring-2 ring-indigo-500/10 outline-none"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+          <select 
+            className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-[10px] font-bold outline-none"
+            value={selectedType}
+            onChange={(e) => setSelectedType(e.target.value)}
+          >
+            {types.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+          <button className="bg-slate-900 text-white hover:bg-black px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all shadow-lg active:scale-95">Add Resource</button>
+        </div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
-        {rooms.map(room => (
-          <div key={room.id} className="bg-white border border-slate-200 p-4 rounded-xl space-y-3 hover:shadow-md transition-all group flex flex-col">
-            <div className="flex justify-between items-start">
-              <div className={cn(
-                "p-2 rounded-lg transition-colors border",
-                room.type === 'Lab' ? "bg-emerald-50 text-emerald-600 border-emerald-100" :
-                room.type === 'Auditorium' ? "bg-amber-50 text-amber-600 border-amber-100" :
-                "bg-indigo-50 text-indigo-600 border-indigo-100"
-              )}>
-                {room.type === 'Lab' ? <Activity size={16} /> : room.type === 'Auditorium' ? <LayoutDashboard size={16} /> : <CalendarCheck size={16} />}
+        {filteredRooms.map(room => {
+          const now = new Date();
+          const activeBooking = currentBookings.find(b => 
+            b.roomId === room.id && 
+            new Date(b.startTime) <= now && 
+            new Date(b.endTime) >= now
+          );
+          const isAvailable = !activeBooking;
+
+          return (
+            <div key={room.id} className="bg-white border border-slate-200 p-4 rounded-xl space-y-3 hover:shadow-md transition-all group flex flex-col">
+              <div className="flex justify-between items-start">
+                <div className={cn(
+                  "p-2 rounded-lg transition-colors border",
+                  room.type === 'Lab' ? "bg-emerald-50 text-emerald-600 border-emerald-100" :
+                  room.type === 'Auditorium' ? "bg-amber-50 text-amber-600 border-amber-100" :
+                  room.type === 'Equipment' ? "bg-purple-50 text-purple-600 border-purple-100" :
+                  room.type === 'Seminar Hall' ? "bg-blue-50 text-blue-600 border-blue-100" :
+                  "bg-indigo-50 text-indigo-600 border-indigo-100"
+                )}>
+                  {room.type === 'Lab' ? <Activity size={16} /> : 
+                   room.type === 'Auditorium' ? <LayoutDashboard size={16} /> : 
+                   room.type === 'Equipment' ? <Box size={16} /> :
+                   room.type === 'Seminar Hall' ? <CalendarCheck size={16} /> :
+                   <CalendarCheck size={16} />}
+                </div>
+                <div className="flex flex-col items-end gap-1">
+                  <span className={cn(
+                    "text-[7px] px-1.5 py-0.5 rounded font-black uppercase border tracking-widest",
+                    isAvailable 
+                      ? "bg-emerald-50 text-emerald-600 border-emerald-100" 
+                      : "bg-red-50 text-red-600 border-red-100 animate-pulse"
+                  )}>
+                    {isAvailable ? 'Available' : 'Engaged'}
+                  </span>
+                  <span className="text-[7px] px-1.5 py-0.5 bg-slate-50 text-slate-400 rounded font-bold uppercase border border-slate-100">
+                    L: {room.floor}
+                  </span>
+                </div>
               </div>
-              <span className="text-[8px] px-1.5 py-0.5 bg-slate-50 text-slate-400 rounded font-bold uppercase border border-slate-100">
-                L: {room.floor}
-              </span>
-            </div>
-            <div>
-              <h3 className="text-slate-900 font-bold text-xs truncate">{room.name}</h3>
-              <p className="text-[10px] text-slate-400 mt-0.5">{room.building}</p>
-            </div>
-            <div className="flex gap-3 pt-2 border-t border-slate-50">
-              <div className="flex-1">
-                <p className="text-[8px] text-slate-400 uppercase font-black tracking-widest mb-0.5">Capacity</p>
-                <p className="text-slate-700 font-mono font-bold text-[10px]">{room.capacity}</p>
+              <div>
+                <h3 className="text-slate-900 font-bold text-xs truncate">{room.name}</h3>
+                <p className="text-[10px] text-slate-400 mt-0.5">{room.building}</p>
               </div>
-              <div className="flex-1 border-l border-slate-50 pl-3">
-                <p className="text-[8px] text-slate-400 uppercase font-black tracking-widest mb-0.5">Type</p>
-                <p className="text-slate-700 font-bold text-[10px]">{room.type}</p>
+              
+              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-50">
+                <div>
+                  <p className="text-[8px] text-slate-400 uppercase font-black tracking-widest mb-0.5">Capacity</p>
+                  <p className="text-slate-700 font-mono font-bold text-[10px]">{room.capacity || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-[8px] text-slate-400 uppercase font-black tracking-widest mb-0.5">Type</p>
+                  <p className="text-slate-700 font-bold text-[10px]">{room.type}</p>
+                </div>
               </div>
-            </div>
-            <div className="flex justify-between items-center pt-2 mt-auto">
-              <div className="flex -space-x-1.5">
-                {[1, 2].map(i => (
-                  <div key={i} className="w-5 h-5 rounded-full border border-white bg-slate-100 overflow-hidden ring-1 ring-slate-200 shadow-sm">
-                    <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=u${i}${room.id}`} alt="user" />
+
+              <div className="pt-2">
+                <p className="text-[8px] text-slate-400 uppercase font-black tracking-widest mb-1.5">Booking Status</p>
+                {activeBooking ? (
+                  <div className="bg-slate-50 rounded-lg p-2 border border-slate-100">
+                    <p className="text-[9px] font-black text-slate-900 truncate">{activeBooking.userName}</p>
+                    <p className="text-[8px] text-slate-500 font-bold">{format(new Date(activeBooking.endTime), 'hh:mm a')} finish</p>
                   </div>
-                ))}
+                ) : (
+                  <div className="bg-emerald-50/30 rounded-lg p-2 border border-emerald-100/50">
+                    <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Idle / Ready</p>
+                  </div>
+                )}
               </div>
-              <div className="flex gap-1">
-                <button className="p-1 text-slate-300 hover:text-indigo-600 transition-colors"><Settings size={12} /></button>
-                <button className="p-1 text-slate-300 hover:text-red-500 transition-colors"><Activity size={12} className="rotate-45" /></button>
+
+              <div className="flex justify-between items-center pt-2 mt-auto border-t border-slate-50">
+                <div className="flex -space-x-1.5">
+                  {[1, 2].map(i => (
+                    <div key={i} className="w-4 h-4 rounded-full border border-white bg-slate-100 overflow-hidden ring-1 ring-slate-200">
+                      <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=u${i}${room.id}`} alt="user" />
+                    </div>
+                  ))}
+                </div>
+                <div className="flex gap-1">
+                  <button className="p-1 text-slate-300 hover:text-indigo-600 transition-all"><Settings size={12} /></button>
+                  <button className="p-1 text-slate-300 hover:text-red-500 transition-all"><Activity size={12} className="rotate-45" /></button>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -659,6 +865,7 @@ function BookingView({ rooms, bookings, onApply, role, addNotification }: { room
     startTime: '10:00',
     endTime: '11:00',
     purpose: '',
+    reminderMinutes: 60,
     userName: role === 'Administrator' ? 'Admin IQ' : role === 'Faculty' ? 'Prof. Sharma' : 'Devika (Student)',
     priority: role === 'Administrator' ? 3 : role === 'Faculty' ? 2 : 1
   });
@@ -691,20 +898,36 @@ function BookingView({ rooms, bookings, onApply, role, addNotification }: { room
     return getConflict({ roomId: formData.roomId, startTime: s, endTime: e }, bookings);
   }, [formData, bookings]);
 
+  const suggestions = useMemo(() => {
+    if (!conflict) return [];
+    const s = new Date(`${formData.date}T${formData.startTime}`).toISOString();
+    const e = new Date(`${formData.date}T${formData.endTime}`).toISOString();
+    return findAvailableRooms(s, e, rooms, bookings).filter(r => r.id !== formData.roomId);
+  }, [conflict, formData, rooms, bookings]);
+
+  const availableSlots = useMemo(() => {
+    if (!conflict || !formData.roomId) return [];
+    return findAvailableSlots(formData.date, formData.roomId, bookings);
+  }, [conflict, formData.date, formData.roomId, bookings]);
+
   // Trigger conflict notification
   React.useEffect(() => {
     if (conflict) {
       addNotification(
         'Collision Detected', 
-        `Conflict with ${conflict.userName}'s session in ${rooms.find(r => r.id === formData.roomId)?.name}. AI recommends redirecting to Seminar Hall A.`, 
+        `Conflict with ${conflict.userName}'s session in ${rooms.find(r => r.id === formData.roomId)?.name}. AI identifies ${suggestions.length} available alternatives.`, 
         'Warning'
       );
     }
-  }, [conflict, rooms, formData.roomId, addNotification]);
+  }, [conflict, rooms, formData.roomId, addNotification, suggestions]);
+
+  const canOverride = useMemo(() => {
+    return conflict && formData.priority > conflict.priority;
+  }, [conflict, formData.priority]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (conflict) return;
+    if (conflict && !canOverride) return;
 
     const s = new Date(`${formData.date}T${formData.startTime}`).toISOString();
     const e_time = new Date(`${formData.date}T${formData.endTime}`).toISOString();
@@ -717,11 +940,15 @@ function BookingView({ rooms, bookings, onApply, role, addNotification }: { room
       startTime: s,
       endTime: e_time,
       purpose: formData.purpose,
+      reminderMinutes: formData.reminderMinutes,
       status: 'Pending',
       priority: formData.priority,
     };
 
     onApply(newBooking);
+    if (canOverride) {
+      addNotification('Priority Escalation', `Request logged with higher priority than existing occupant.`, 'Info');
+    }
     setNotification({ type: 'success', msg: 'Booking request sent for approval!' });
     setFormData({ ...formData, purpose: '', roomId: '' });
     setTimeout(() => setNotification(null), 3000);
@@ -756,6 +983,24 @@ function BookingView({ rooms, bookings, onApply, role, addNotification }: { room
         </div>
       </div>
 
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {[
+          { label: 'Demand Peak', value: '11:00 AM - 02:00 PM', icon: Zap, color: 'text-amber-500', bg: 'bg-amber-50' },
+          { label: 'Idle Windows', value: '04:00 PM - 07:00 PM', icon: Activity, color: 'text-emerald-500', bg: 'bg-emerald-50' },
+          { label: 'Optimized Slots', value: '86% Efficiency', icon: ShieldCheck, color: 'text-indigo-500', bg: 'bg-indigo-50' },
+        ].map((stat, i) => (
+          <div key={i} className="bg-white border border-slate-200 p-3 rounded-xl flex items-center gap-3">
+            <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center", stat.bg)}>
+              <stat.icon size={14} className={stat.color} />
+            </div>
+            <div>
+              <p className="text-[8px] font-black uppercase text-slate-400 tracking-widest">{stat.label}</p>
+              <p className="text-[10px] font-black text-slate-900">{stat.value}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
       <AnimatePresence mode="wait">
         {viewMode === 'form' ? (
           <motion.div 
@@ -764,162 +1009,318 @@ function BookingView({ rooms, bookings, onApply, role, addNotification }: { room
             animate={{ opacity: 1, scale: 1 }}
             className="grid grid-cols-1 lg:grid-cols-12 gap-5"
           >
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="lg:col-span-7 bg-white border border-slate-200 p-5 rounded-xl shadow-sm space-y-4">
-          <div className="space-y-4">
-            <div>
-              <label className="block text-[9px] uppercase font-black text-slate-400 tracking-widest mb-1.5">Target node</label>
-              <select 
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-700 focus:outline-none focus:ring-2 ring-indigo-500/10 font-bold text-[11px]"
-                value={formData.roomId}
-                onChange={e => setFormData({...formData, roomId: e.target.value})}
-                required
-              >
-                <option value="">Select facility...</option>
-                {rooms.map(r => <option key={r.id} value={r.id}>{r.name} - {r.building}</option>)}
-              </select>
-            </div>
+            {/* Form */}
+            <form onSubmit={handleSubmit} className="lg:col-span-7 bg-white border border-slate-200 p-5 rounded-xl shadow-sm space-y-4">
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-[9px] uppercase font-black text-slate-400 tracking-widest mb-1.5">Target node</label>
+                  <select 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-700 focus:outline-none focus:ring-2 ring-indigo-500/10 font-bold text-[11px]"
+                    value={formData.roomId}
+                    onChange={e => setFormData({...formData, roomId: e.target.value})}
+                    required
+                  >
+                    <option value="">Select facility...</option>
+                    {rooms.map(r => <option key={r.id} value={r.id}>{r.name} - {r.building}</option>)}
+                  </select>
+                </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-[9px] uppercase font-black text-slate-400 tracking-widest mb-1.5">Date Pulse</label>
-                <input 
-                  type="date"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-700 text-[11px] font-bold"
-                  value={formData.date}
-                  onChange={e => setFormData({...formData, date: e.target.value})}
-                />
-              </div>
-              <div>
-                <label className="block text-[9px] uppercase font-black text-slate-400 tracking-widest mb-1.5">Priority</label>
-                <select 
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-700 text-[11px] font-bold"
-                  value={formData.priority}
-                  onChange={e => setFormData({...formData, priority: parseInt(e.target.value)})}
-                  disabled={role !== 'Administrator'}
-                >
-                  <option value={1}>Student</option>
-                  <option value={2}>Faculty</option>
-                  <option value={3}>Admin</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-[9px] uppercase font-black text-slate-400 tracking-widest mb-1.5">Start</label>
-                <input 
-                  type="time"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-700 text-[11px] font-bold"
-                  value={formData.startTime}
-                  onChange={e => setFormData({...formData, startTime: e.target.value})}
-                />
-              </div>
-              <div>
-                <label className="block text-[9px] uppercase font-black text-slate-400 tracking-widest mb-1.5">End</label>
-                <input 
-                  type="time"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-700 text-[11px] font-bold"
-                  value={formData.endTime}
-                  onChange={e => setFormData({...formData, endTime: e.target.value})}
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-[9px] uppercase font-black text-slate-400 tracking-widest mb-1.5">Intent</label>
-              <textarea 
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-700 h-20 resize-none text-[11px] font-bold"
-                placeholder="State purpose..."
-                value={formData.purpose}
-                onChange={e => setFormData({...formData, purpose: e.target.value})}
-                required
-              />
-            </div>
-          </div>
-
-          <button 
-            type="submit"
-            disabled={!!conflict}
-            className={cn(
-              "w-full py-3 rounded-lg font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 shadow-lg text-[10px]",
-              conflict 
-                ? "bg-slate-100 text-slate-400 cursor-not-allowed shadow-none" 
-                : "bg-indigo-600 hover:bg-black text-white shadow-indigo-100"
-            )}
-          >
-            {conflict ? <AlertTriangle size={14} /> : <Zap size={14} />}
-            {conflict ? 'Node Engaged' : 'Execute Booking'}
-          </button>
-        </form>
-
-        {/* Real-time Preview / Conflicts */}
-        <div className="lg:col-span-5 space-y-4">
-          <div className="bg-white border border-slate-200 p-5 rounded-xl shadow-sm">
-            <h3 className="text-slate-900 text-xs font-black uppercase tracking-widest mb-5 flex items-center gap-2">
-              <ShieldCheck size={14} className="text-indigo-600" />
-              Conflict Monitor
-            </h3>
-            
-            {conflict ? (
-              <motion.div 
-                initial={{ opacity: 0, scale: 0.98 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="p-4 bg-red-50 border border-red-100 rounded-lg space-y-3"
-              >
-                <div className="flex justify-between items-start">
-                  <div className="flex items-center gap-2 text-red-600 ">
-                    <AlertTriangle size={14} />
-                    <span className="font-black text-[9px] uppercase tracking-widest">Collsion</span>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[9px] uppercase font-black text-slate-400 tracking-widest mb-1.5">Date Pulse</label>
+                    <input 
+                      type="date"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-700 text-[11px] font-bold"
+                      value={formData.date}
+                      onChange={e => setFormData({...formData, date: e.target.value})}
+                    />
                   </div>
-                  <span className="text-[8px] font-mono bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-black">#ERR</span>
-                </div>
-                <div className="text-[10px] text-slate-700 font-bold leading-tight">
-                   Resource engaged by <span className="text-indigo-600">{conflict.userName}</span>.
-                </div>
-                <div className="pt-3 border-t border-red-100">
-                  <p className="text-[8px] uppercase font-black text-slate-400 mb-2 tracking-widest">AI Recommendation</p>
-                  <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-lg">
-                    <p className="text-[10px] font-black text-indigo-900 mb-1">Reroute to Seminar Hall A</p>
-                    <button 
-                      onClick={() => {
-                        setFormData({...formData, roomId: '4'});
-                        addNotification('Optimization Applied', 'Rerouted to Seminar Hall A.', 'Success');
-                      }}
-                      className="mt-2 w-full bg-white text-indigo-600 text-[9px] font-black py-1.5 rounded-md border border-indigo-200 hover:bg-indigo-600 hover:text-white transition-all uppercase tracking-widest"
+                  <div>
+                    <label className="block text-[9px] uppercase font-black text-slate-400 tracking-widest mb-1.5">Priority</label>
+                    <select 
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-700 text-[11px] font-bold"
+                      value={formData.priority}
+                      onChange={e => setFormData({...formData, priority: parseInt(e.target.value)})}
+                      disabled={role !== 'Administrator'}
                     >
-                      Process Reroute
-                    </button>
+                      <option value={1}>Student</option>
+                      <option value={2}>Faculty</option>
+                      <option value={3}>Admin</option>
+                    </select>
                   </div>
                 </div>
-              </motion.div>
-            ) : (
-              <div className="p-8 border-2 border-dashed border-slate-50 rounded-lg flex flex-col items-center justify-center text-center">
-                <Activity size={24} className="text-slate-100 mb-2" />
-                <p className="text-slate-300 text-[9px] font-black uppercase tracking-widest">Scanning pulses...</p>
-              </div>
-            )}
-          </div>
 
-          <AnimatePresence>
-            {notification && (
-              <motion.div 
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[9px] uppercase font-black text-slate-400 tracking-widest mb-1.5">Start</label>
+                    <input 
+                      type="time"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-700 text-[11px] font-bold"
+                      value={formData.startTime}
+                      onChange={e => setFormData({...formData, startTime: e.target.value})}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[9px] uppercase font-black text-slate-400 tracking-widest mb-1.5">End</label>
+                    <input 
+                      type="time"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-700 text-[11px] font-bold"
+                      value={formData.endTime}
+                      onChange={e => setFormData({...formData, endTime: e.target.value})}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[9px] uppercase font-black text-slate-400 tracking-widest mb-1.5">Intent</label>
+                  <textarea 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-700 h-20 resize-none text-[11px] font-bold"
+                    placeholder="State purpose..."
+                    value={formData.purpose}
+                    onChange={e => setFormData({...formData, purpose: e.target.value})}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[9px] uppercase font-black text-slate-400 tracking-widest mb-1.5">Reminder Pulse</label>
+                  <select 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-700 text-[11px] font-bold focus:outline-none focus:ring-2 ring-indigo-500/10"
+                    value={formData.reminderMinutes || 60}
+                    onChange={e => setFormData({...formData, reminderMinutes: parseInt(e.target.value)})}
+                  >
+                    <option value={15}>15 Minutes before</option>
+                    <option value={30}>30 Minutes before</option>
+                    <option value={60}>1 Hour before</option>
+                    <option value={1440}>1 Day before</option>
+                    <option value={0}>No reminder</option>
+                  </select>
+                </div>
+              </div>
+
+              <button 
+                type="submit"
+                disabled={!!conflict && !canOverride}
                 className={cn(
-                  "p-4 rounded-xl flex items-center gap-3 font-bold text-sm shadow-lg",
-                  notification.type === 'success' ? "bg-emerald-600 text-white shadow-emerald-100" : "bg-red-600 text-white shadow-red-100"
+                  "w-full py-3 rounded-lg font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 shadow-lg text-[10px]",
+                  conflict && !canOverride
+                    ? "bg-slate-100 text-slate-400 cursor-not-allowed shadow-none" 
+                    : canOverride 
+                      ? "bg-amber-500 hover:bg-amber-600 text-white shadow-amber-100"
+                      : "bg-indigo-600 hover:bg-black text-white shadow-indigo-100"
                 )}
               >
-                <CheckCircle2 size={18} />
-                {notification.msg}
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-      </motion.div>
-    ) : (
+                {conflict ? <AlertTriangle size={14} /> : <Zap size={14} />}
+                {conflict 
+                  ? canOverride ? 'Escalate Request' : 'Node Engaged' 
+                  : 'Execute Booking'}
+              </button>
+            </form>
+
+            {/* Real-time Preview / Conflicts */}
+            <div className="lg:col-span-5 space-y-4">
+              <div className="bg-white border border-slate-200 p-5 rounded-xl shadow-sm">
+                <h3 className="text-slate-900 text-xs font-black uppercase tracking-widest mb-5 flex items-center gap-2">
+                  <ShieldCheck size={14} className="text-indigo-600" />
+                  Conflict Monitor
+                </h3>
+                
+                {conflict ? (
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.98 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className={cn(
+                      "p-4 border rounded-lg space-y-3",
+                      canOverride ? "bg-amber-50 border-amber-100" : "bg-red-50 border-red-100"
+                    )}
+                  >
+                    <div className="flex justify-between items-start">
+                      <div className={cn(
+                        "flex items-center gap-2",
+                        canOverride ? "text-amber-600" : "text-red-600"
+                      )}>
+                        <AlertTriangle size={14} />
+                        <span className="font-black text-[9px] uppercase tracking-widest">
+                          {canOverride ? 'Priority Conflict' : 'Hard Collision'}
+                        </span>
+                      </div>
+                      <span className={cn(
+                        "text-[8px] font-mono px-1.5 py-0.5 rounded font-black",
+                        canOverride ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"
+                      )}>
+                        {canOverride ? '#OVERRIDE' : '#ERR'}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-slate-700 font-bold leading-tight">
+                       Resource engaged by <span className="text-indigo-600">{conflict.userName}</span> ({getPriorityLabel(conflict.priority)}).
+                       {canOverride && <p className="mt-1 text-amber-700 font-black">Your higher priority allows escalation.</p>}
+                    </div>
+                    <div className={cn(
+                      "pt-3 border-t space-y-4",
+                      canOverride ? "border-amber-100" : "border-red-100"
+                    )}>
+                      <div>
+                        <p className="text-[8px] uppercase font-black text-slate-400 mb-2 tracking-widest">AI Reroute suggestions</p>
+                        <div className="space-y-2">
+                          {suggestions.slice(0, 2).map(alt => (
+                            <div key={alt.id} className="p-3 bg-white border border-indigo-100 rounded-lg flex justify-between items-center group hover:border-indigo-400 transition-all">
+                              <div>
+                                <p className="text-[10px] font-black text-indigo-900 mb-0.5">{alt.name}</p>
+                                <p className="text-[8px] text-slate-400 font-bold uppercase tracking-widest">{alt.type} • Cap: {alt.capacity}</p>
+                              </div>
+                              <button 
+                                type="button"
+                                onClick={() => {
+                                  setFormData({...formData, roomId: alt.id});
+                                  addNotification('System Rerouted', `Shifted to ${alt.name}.`, 'Success');
+                                }}
+                                className="bg-indigo-50 text-indigo-600 text-[8px] font-black px-2 py-1 rounded border border-indigo-100 hover:bg-indigo-600 hover:text-white transition-all uppercase tracking-widest"
+                              >
+                                Swap Room
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {availableSlots.length > 0 && (
+                        <div>
+                          <p className="text-[8px] uppercase font-black text-slate-400 mb-2 tracking-widest">Available pulses today</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {availableSlots.slice(0, 5).map((slot, i) => (
+                              <button
+                                key={i}
+                                type="button"
+                                onClick={() => {
+                                  setFormData({ ...formData, startTime: slot.start, endTime: slot.end });
+                                  addNotification('Time Optimized', `Slot adjusted to ${slot.start}.`, 'Success');
+                                }}
+                                className="px-2 py-1 bg-white border border-slate-200 rounded text-[8px] font-bold text-slate-600 hover:border-indigo-500 hover:text-indigo-600 transition-all"
+                              >
+                                {slot.start} - {slot.end}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {suggestions.length === 0 && availableSlots.length === 0 && (
+                        <p className="text-[9px] text-slate-400 font-bold italic">No immediate optimizations found.</p>
+                      )}
+                    </div>
+                  </motion.div>
+                ) : (
+                  <div className="p-8 border-2 border-dashed border-slate-50 rounded-lg flex flex-col items-center justify-center text-center">
+                    <Activity size={24} className="text-slate-100 mb-2" />
+                    <p className="text-slate-300 text-[9px] font-black uppercase tracking-widest">Scanning pulses...</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Mini Heatmap Visualization for the chosen room */}
+              {formData.roomId && (
+                <div className="bg-white border border-slate-200 p-5 rounded-xl shadow-sm">
+                  <h3 className="text-slate-900 text-xs font-black uppercase tracking-widest mb-4 flex items-center gap-2">
+                    <Clock size={14} className="text-indigo-600" />
+                    Daily Pulse Visualizer
+                  </h3>
+                  <div className="grid grid-cols-4 gap-1">
+                    {['08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'].map(time => {
+                      const hour = parseInt(time.split(':')[0]);
+                      const isBooked = bookings.some(b => 
+                        b.roomId === formData.roomId && 
+                        b.status === 'Approved' &&
+                        new Date(b.startTime).getHours() === hour &&
+                        isSameDay(new Date(b.startTime), new Date(formData.date))
+                      );
+                      
+                      return (
+                        <div 
+                          key={time} 
+                          className={cn(
+                            "p-2 rounded border text-[7px] font-black uppercase tracking-tighter text-center transition-all",
+                            isBooked ? "bg-red-50 text-red-600 border-red-100" : "bg-emerald-50 text-emerald-600 border-emerald-100"
+                          )}
+                        >
+                          {time}
+                          <div className="mt-0.5">{isBooked ? 'Busy' : 'Idle'}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* User Booking Tracking */}
+              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                <div className="px-5 py-3 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                  <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-500">Your Booking Ledger</h3>
+                  <span className="text-[9px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full">{bookings.filter(b => b.userName === formData.userName).length} Active</span>
+                </div>
+                <div className="p-0 max-h-[300px] overflow-y-auto">
+                  {bookings.filter(b => b.userName === formData.userName).length === 0 ? (
+                    <div className="p-12 text-center">
+                      <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-3 text-slate-200">
+                        <CalendarCheck size={24} />
+                      </div>
+                      <p className="text-[9px] text-slate-300 font-bold uppercase tracking-widest">No local pulses found</p>
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-slate-100">
+                      {bookings.filter(b => b.userName === formData.userName).map(b => (
+                        <div key={b.id} className="p-3.5 flex items-center justify-between hover:bg-slate-50/50 transition-colors">
+                          <div className="flex items-center gap-4">
+                            <div className={cn(
+                              "w-9 h-9 rounded-lg flex items-center justify-center border",
+                              b.status === 'Approved' ? "bg-emerald-50 text-emerald-600 border-emerald-100" :
+                              b.status === 'Rejected' ? "bg-red-50 text-red-600 border-red-100" :
+                              "bg-amber-50 text-amber-600 border-amber-100"
+                            )}>
+                              {b.status === 'Approved' ? <CheckCircle2 size={16} /> : 
+                               b.status === 'Rejected' ? <AlertTriangle size={16} /> : 
+                               <Activity size={16} />}
+                            </div>
+                            <div>
+                              <p className="text-[11px] font-bold text-slate-900 truncate max-w-[120px]">{rooms.find(r => r.id === b.roomId)?.name}</p>
+                              <p className="text-[8px] text-slate-400 font-black uppercase tracking-widest leading-none mt-1">{format(new Date(b.startTime), 'MMM d')} • {b.purpose}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <span className={cn(
+                              "text-[7px] font-black uppercase tracking-widest px-2 py-0.5 rounded border shadow-sm scale-90",
+                              b.status === 'Approved' ? "bg-emerald-500 text-white border-emerald-400" :
+                              b.status === 'Rejected' ? "bg-red-500 text-white border-red-400" :
+                              "bg-white text-amber-500 border-amber-100"
+                            )}>
+                              {b.status}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <AnimatePresence>
+                {notification && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -20 }}
+                    className={cn(
+                      "p-4 rounded-xl flex items-center gap-3 font-bold text-sm shadow-lg",
+                      notification.type === 'success' ? "bg-emerald-600 text-white shadow-emerald-100" : "bg-red-600 text-white shadow-red-100"
+                    )}
+                  >
+                    <CheckCircle2 size={18} />
+                    {notification.msg}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </motion.div>
+        ) : (
       <motion.div 
         key="calendar"
             initial={{ opacity: 0, scale: 0.98 }}
@@ -1177,14 +1578,179 @@ function OptimizationView({ rooms, bookings }: { rooms: Room[], bookings: Bookin
   );
 }
 
-function AnalyticsView() {
-  const data = [
-    { day: 'Mon', power: 45, water: 30, hvac: 60 },
-    { day: 'Tue', power: 52, water: 35, hvac: 65 },
-    { day: 'Wed', power: 65, water: 45, hvac: 80 },
-    { day: 'Thu', power: 58, water: 40, hvac: 72 },
-    { day: 'Fri', power: 48, water: 32, hvac: 62 },
-  ];
+function SettingsView({ addNotification }: { addNotification: (t: string, m: string, type: AppNotification['type']) => void }) {
+  const [pref, setPref] = useState({
+    defaultReminder: '60',
+    emailNotifications: true,
+    inAppPopups: true,
+    reminderFrequency: 'standard'
+  });
+
+  const handleSave = () => {
+    addNotification('Preferences Updated', 'Your system configurations have been synchronized.', 'Success');
+  };
+
+  return (
+    <div className="max-w-2xl mx-auto space-y-6">
+      <div className="flex justify-between items-end">
+        <div>
+          <h2 className="text-lg font-black tracking-tight text-slate-900">System Preferences</h2>
+          <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mt-0.5">Notification & Workflow Tuning</p>
+        </div>
+      </div>
+
+      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+        <div className="p-6 space-y-6">
+          <div className="space-y-4">
+            <h3 className="text-[10px] font-black text-slate-900 uppercase tracking-[0.2em] flex items-center gap-2">
+              <Bell size={14} className="text-indigo-600" />
+              Notification Pulse
+            </h3>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-[11px] font-bold text-slate-700">Email Relay</p>
+                    <p className="text-[9px] text-slate-400">Receive external alerts for node status</p>
+                  </div>
+                  <button 
+                    onClick={() => setPref({...pref, emailNotifications: !pref.emailNotifications})}
+                    className={cn(
+                      "w-8 h-4 rounded-full transition-all relative",
+                      pref.emailNotifications ? "bg-indigo-600" : "bg-slate-200"
+                    )}
+                  >
+                    <div className={cn(
+                      "absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all",
+                      pref.emailNotifications ? "right-0.5" : "left-0.5"
+                    )} />
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-[11px] font-bold text-slate-700">In-App Pulses</p>
+                    <p className="text-[9px] text-slate-400">Real-time terminal notifications</p>
+                  </div>
+                  <button 
+                    onClick={() => setPref({...pref, inAppPopups: !pref.inAppPopups})}
+                    className={cn(
+                      "w-8 h-4 rounded-full transition-all relative",
+                      pref.inAppPopups ? "bg-indigo-600" : "bg-slate-200"
+                    )}
+                  >
+                    <div className={cn(
+                      "absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all",
+                      pref.inAppPopups ? "right-0.5" : "left-0.5"
+                    )} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-[9px] uppercase font-black text-slate-400 tracking-widest mb-1.5">Default Reminder Interval</label>
+                  <select 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-700 text-[11px] font-bold focus:outline-none focus:ring-2 ring-indigo-500/10"
+                    value={pref.defaultReminder}
+                    onChange={e => setPref({...pref, defaultReminder: e.target.value})}
+                  >
+                    <option value="15">15 Minutes before</option>
+                    <option value="30">30 Minutes before</option>
+                    <option value="60">1 Hour before</option>
+                    <option value="1440">1 Day before</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-6 border-t border-slate-100 flex justify-end">
+            <button 
+              onClick={handleSave}
+              className="bg-slate-900 text-white hover:bg-black px-6 py-2 rounded-lg text-[10px] font-black uppercase transition-all shadow-lg active:scale-95"
+            >
+              Sync Configuration
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-indigo-900 text-white p-6 rounded-2xl relative overflow-hidden shadow-xl">
+        <div className="relative z-10 flex items-center gap-6">
+          <div className="w-12 h-12 bg-white/10 rounded-xl flex items-center justify-center border border-white/20">
+            <ShieldCheck size={24} className="text-emerald-400" />
+          </div>
+          <div>
+            <h3 className="text-xs font-black uppercase tracking-[0.2em] text-indigo-200">Security Invariant</h3>
+            <p className="text-[10px] text-white/70 mt-1 leading-relaxed">
+              All reminder pulses are end-to-end encrypted. System notifications utilize low-latency WebSocket relays to ensure delivery sub-100ms.
+            </p>
+          </div>
+        </div>
+        <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 blur-[100px] -mr-32 -mt-32" />
+      </div>
+    </div>
+  );
+}
+
+function AnalyticsView({ bookings, rooms }: { bookings: Booking[], rooms: Room[] }) {
+  const approvedBookings = useMemo(() => bookings.filter(b => b.status === 'Approved'), [bookings]);
+  
+  // 1. Occupancy Rate by Room Type
+  const utilizationByType = useMemo(() => {
+    const types = Array.from(new Set(rooms.map(r => r.type)));
+    return types.map(type => {
+      const typeRooms = rooms.filter(r => r.type === type);
+      const typeBookings = approvedBookings.filter(b => typeRooms.some(tr => tr.id === b.roomId));
+      // Simple metric: bookings per room of this type
+      const utilization = typeRooms.length > 0 ? (typeBookings.length / typeRooms.length) * 10 : 0;
+      return { name: type, value: Math.min(Math.round(utilization), 100) };
+    });
+  }, [approvedBookings, rooms]);
+
+  // 2. Booking Trends (Last 7 days)
+  const trendsData = useMemo(() => {
+    const last7Days = Array.from({ length: 7 }).map((_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      return format(d, 'MMM dd');
+    }).reverse();
+
+    return last7Days.map(dayStr => {
+      const count = approvedBookings.filter(b => format(new Date(b.startTime), 'MMM dd') === dayStr).length;
+      return { day: dayStr, bookings: count };
+    });
+  }, [approvedBookings]);
+
+  // 3. Room Popularity (Top 5)
+  const popularRooms = useMemo(() => {
+    const stats = rooms.map(room => {
+      const count = approvedBookings.filter(b => b.roomId === room.id).length;
+      return { name: room.name, value: count };
+    });
+    return stats.sort((a, b) => b.value - a.value).slice(0, 5);
+  }, [approvedBookings, rooms]);
+
+  const COLORS = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+
+  const conflicts = useMemo(() => {
+    const pending = bookings.filter(b => b.status === 'Pending');
+    return pending.map(p => {
+      const conflictMsg = getConflict(p, approvedBookings);
+      if (conflictMsg) {
+        return {
+          id: `CF-${p.id.slice(0, 3).toUpperCase()}`,
+          type: 'Node Conflict',
+          block: rooms.find(r => r.id === p.roomId)?.name || 'Unknown',
+          time: format(new Date(p.startTime), 'HH:mm'),
+          level: 'Critical'
+        };
+      }
+      return null;
+    }).filter(Boolean);
+  }, [bookings, approvedBookings, rooms]);
 
   return (
     <div className="space-y-6">
@@ -1199,45 +1765,113 @@ function AnalyticsView() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white border border-slate-200 p-6 rounded-xl shadow-sm">
-          <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest mb-6 flex items-center gap-2">
-            <BarChart4 className="text-indigo-600" size={14} />
-            Utility Pulse
-          </h3>
-          <div className="h-[240px]">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* Trend Analysis */}
+        <div className="lg:col-span-8 bg-white border border-slate-200 p-6 rounded-xl shadow-sm">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+              <BarChart4 className="text-indigo-600" size={14} />
+              Booking Trajectory
+            </h3>
+            <span className="text-[9px] font-bold text-slate-400">LAST 7 DAYS</span>
+          </div>
+          <div className="h-[280px]">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data}>
+              <AreaChart data={trendsData}>
+                <defs>
+                  <linearGradient id="colorBookings" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.1}/>
+                    <stop offset="95%" stopColor="#4f46e5" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f8fafc" />
                 <XAxis dataKey="day" stroke="#94a3b8" axisLine={false} tickLine={false} fontSize={9} fontWeight="bold" />
                 <YAxis stroke="#94a3b8" axisLine={false} tickLine={false} fontSize={9} fontWeight="bold" />
                 <Tooltip 
                    contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #f1f5f9', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold' }}
                 />
-                <Bar dataKey="power" fill="#4f46e5" radius={[2, 2, 0, 0]} barSize={16} />
-                <Bar dataKey="hvac" fill="#10b981" radius={[2, 2, 0, 0]} barSize={16} />
-              </BarChart>
+                <Area type="monotone" dataKey="bookings" stroke="#4f46e5" fillOpacity={1} fill="url(#colorBookings)" strokeWidth={2} />
+              </AreaChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        <div className="bg-white border border-slate-200 p-6 rounded-xl shadow-sm">
+        {/* Popularity Card */}
+        <div className="lg:col-span-4 bg-white border border-slate-200 p-6 rounded-xl shadow-sm">
           <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest mb-6 flex items-center gap-2">
-            <TrendingDown className="text-amber-600" size={14} />
-            Anomaly Stream
+            <Zap className="text-amber-500" size={14} />
+            High Demand Nodes
           </h3>
-          <div className="space-y-2">
-             {[
-               { id: 'AN-89', type: 'Load Peak', block: 'Science', time: '10:45 AM', level: 'Critical' },
-               { id: 'AN-90', type: 'HVAC Leak', block: 'Main Hall', time: '02:15 PM', level: 'Moderate' },
-               { id: 'AN-92', type: 'Low Usage', block: 'Admin', time: 'Yesterday', level: 'Low' },
-             ].map(a => (
-                <div key={a.id} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-100 rounded-lg group hover:border-slate-200 transition-colors">
+          <div className="space-y-4">
+            {popularRooms.map((room, i) => (
+              <div key={i} className="space-y-1.5">
+                <div className="flex justify-between text-[10px] font-bold">
+                  <span className="text-slate-700">{room.name}</span>
+                  <span className="text-indigo-600">{room.value} sessions</span>
+                </div>
+                <div className="h-1.5 w-full bg-slate-50 rounded-full overflow-hidden">
+                  <motion.div 
+                    initial={{ width: 0 }}
+                    animate={{ width: `${(room.value / (popularRooms[0].value || 1)) * 100}%` }}
+                    className="h-full bg-indigo-500"
+                  />
+                </div>
+              </div>
+            ))}
+            {popularRooms.length === 0 && <p className="text-center text-[10px] text-slate-400 italic">No data available.</p>}
+          </div>
+        </div>
+
+        {/* Utilization by Type */}
+        <div className="lg:col-span-6 bg-white border border-slate-200 p-6 rounded-xl shadow-sm">
+          <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest mb-6 flex items-center gap-2">
+             <Activity className="text-emerald-500" size={14} />
+             Sector Utilization
+          </h3>
+          <div className="h-[240px] flex items-center">
+            <ResponsiveContainer width="50%" height="100%">
+              <PieChart>
+                <Pie
+                  data={utilizationByType}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={50}
+                  outerRadius={70}
+                  paddingAngle={5}
+                  dataKey="value"
+                >
+                  {utilizationByType.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip />
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="w-1/2 space-y-2 pl-6 border-l border-slate-100">
+               {utilizationByType.map((item, i) => (
+                 <div key={i} className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
+                      <span className="text-[10px] font-bold text-slate-600">{item.name}</span>
+                    </div>
+                    <span className="text-[10px] font-black text-slate-900">{item.value}%</span>
+                 </div>
+               ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Conflict Alerts */}
+        <div className="lg:col-span-6 bg-white border border-slate-200 p-6 rounded-xl shadow-sm">
+          <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest mb-6 flex items-center gap-2">
+            <AlertTriangle className="text-red-500" size={14} />
+            System Instabilities
+          </h3>
+          <div className="space-y-2 max-h-[240px] overflow-y-auto">
+             {conflicts.length > 0 ? conflicts.map((a: any) => (
+                <div key={a.id} className="flex items-center justify-between p-3 bg-red-50/30 border border-red-100 rounded-lg group hover:border-red-200 transition-colors">
                  <div className="flex items-center gap-3">
-                   <div className={cn(
-                     "w-8 h-8 rounded-lg flex items-center justify-center border shrink-0",
-                     a.level === 'Critical' ? "bg-red-50 text-red-600 border-red-100" : "bg-amber-50 text-amber-600 border-amber-100"
-                   )}>
+                   <div className="w-8 h-8 rounded-lg flex items-center justify-center border shrink-0 bg-red-50 text-red-600 border-red-100">
                      <AlertTriangle size={14} />
                    </div>
                    <div>
@@ -1245,13 +1879,15 @@ function AnalyticsView() {
                      <p className="text-slate-400 text-[8px] uppercase font-black tracking-widest">{a.block} • {a.time}</p>
                    </div>
                  </div>
-                 <span className="text-[8px] font-mono font-black bg-white border border-slate-100 text-slate-400 px-1.5 py-0.5 rounded uppercase tracking-tighter tabular-nums">{a.id}</span>
+                 <span className="text-[8px] font-mono font-black bg-white border border-red-100 text-red-600 px-1.5 py-0.5 rounded uppercase tracking-tighter tabular-nums">{a.id}</span>
                </div>
-             ))}
+             )) : (
+              <div className="p-8 text-center bg-slate-50 border border-dashed border-slate-200 rounded-lg">
+                <ShieldCheck size={24} className="mx-auto text-slate-200 mb-2" />
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">System Stable - 0 Conflicts</p>
+              </div>
+             )}
           </div>
-          <button className="mt-6 w-full py-2 bg-slate-50 text-[9px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-all border border-slate-100">
-             Audit Logs
-          </button>
         </div>
       </div>
     </div>
